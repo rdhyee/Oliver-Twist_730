@@ -1,0 +1,59 @@
+sudo: required
+dist: trusty
+language: ruby
+
+before_install:
+- gem install asciidoctor -v 1.5.2 
+- gem install tilt
+- sudo pip install git+https://github.com/rdhyee/ebooklib.git
+script:
+- VERSION=`ruby -e "require 'yaml'; meta = YAML.load_file('metadata.yaml'); puts meta['_version'];"`
+- git clone https://github.com/gitenberg-dev/asciidoctor-htmlbook.git
+
+- sudo pip install -r asciidoctor-htmlbook/gitberg-machine/requirements.txt
+- asciidoctor -a toc,idprefix=xx_,version=$VERSION -b xhtml5 -T ./asciidoctor-htmlbook/htmlbook-autogen/
+  -d book book.asciidoc -o book.html
+- git clone https://github.com/gitenberg-dev/HTMLBook
+
+# make book.html available to jinja2 environment by putting it into templates
+- cp book.html asciidoctor-htmlbook/gitberg-machine/templates/
+
+- /usr/bin/python asciidoctor-htmlbook/gitberg-machine/machine.py -o . -m metadata.yaml book.html
+- xsltproc -stringparam external.assets.list " " ./HTMLBook/htmlbook-xsl/epub.xsl book.html
+- cp ./HTMLBook/stylesheets/epub/epub.css OEBPS
+- if [ -e cover.jpg ]; then cp cover.jpg OEBPS/cover.jpg; fi
+# look for first images directory and one found, copy over to ./OEBPS
+- find . -name images -type d | head -n 1 | xargs -I {} mv {} ./OEBPS/
+- zip -rX book.epub mimetype
+- zip -rX book.epub OEBPS/ META-INF/
+- if test -d "OEBPS/images/"; then zip -rX book.epub OEBPS/images/ ;fi
+- mv book.epub Oliver-Twist.epub
+- ebook-convert Oliver-Twist.epub Oliver-Twist.mobi
+- xvfb-run ebook-convert Oliver-Twist.epub Oliver-Twist.pdf
+branches:
+  only:
+  - master
+notifications:
+  webhooks:
+    urls:
+      - https://unglue.it/api/travisci/webhook
+    on_success: always
+    on_failure: never
+    on_start: never
+deploy:
+  skip_cleanup: true
+  provider: releases
+  api_key:
+    secure: MdICbGDC8hJiXlgPJrbhaJrp2OEZPThTGq0Cbl73N2T3Q84WAqw4Pzhi342AIihvzAEdilmfrC3XgT1uhrExsCXu8vom/sImjDUEUveQRtFG4Y0GfKQ5mVt9lJsmAkWDdzhCN8uE2BzkUjB/KrZrifyrlO4t5Nz0ET66IAUOx60uYju5AU5kpc45rOKlgbb8QWh25FRv+qATD2QjGMaYS1i0gRbIMZ1NQ0VxhIsYo46GYzmFMfN9kvAaLDVB6oq0qykJ/VBDh3v4Mx1I9H7k4wdmfQDenE6RcIlkN3ncQffyUR9+Tdnh1rgYQ/GCKRK/VRTO/v0IovxCZsRGxWCOFOeaDGoPfRp4iO+HgnAhths6y5AIf3UbJQFCSFk2OF+gTsNF/fIusO7biIEyhJzsc9+vKgOR+3dj8VcEerRULZRDEqRzYz6/YnKbqTGQjjXKDOZesvCzQaaSVEJtlw7png72o7VZtVLFjfQGphYtV9gglX1ATSs7gKvIbCw9iC0goAb342ZzW8tBrRoxDR2Re97SDHQ/E9G1vfI+wSFkQ6kGWKqOJxrOjYarwngc7r+tFrVWv/daInB3L1K22K3qTdn53Th/3aTWbD/jXKyDmkwOfJLXq9YWGH0QZkqqtYtlH3JFImA35rEqvVXiSrQzk/Tll1/u5e3gu1KGdpEVdsQ=
+  file:
+    - Oliver-Twist.epub
+    - Oliver-Twist.mobi
+    - Oliver-Twist.pdf
+  "on":
+    repo: GITenberg/Oliver-Twist_730
+addons:
+  apt:
+    packages:
+    - xsltproc
+    - xvfb
+    - calibre
